@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  staff
+  customer
+}
+
+enum PlanKind {
+  membership
+  pass
+  daily
+}
+
+enum PaymentType {
+  new_membership
+  pass
+  daily_member
+  daily_walkin
+}
+
+enum ContentType {
+  text
+  richtext
+  image_url
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  member        Member?
+  contentBlocks ContentBlock[]
+
+  @@map("users")
+}
+
+model Member {
+  id               String   @id @default(uuid())
+  userId           String   @unique @map("user_id")
+  membershipId     String   @unique @map("membership_id")
+  fullName         String   @map("full_name")
+  address          String
+  emergencyContact String   @map("emergency_contact")
+  joinedAt         DateTime @default(now()) @map("joined_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  payments Payment[]
+  passes   Pass[]
+  visits   Visit[]
+
+  @@map("members")
+}
+
+model Plan {
+  id           String   @id @default(uuid())
+  name         String
+  kind         PlanKind
+  durationDays Int?     @map("duration_days")
+  price        Decimal
+  isMemberRate Boolean  @map("is_member_rate")
+  active       Boolean  @default(true)
+
+  payments Payment[]
+  passes   Pass[]
+
+  @@map("plans")
+}
+
+model Payment {
+  id        String      @id @default(uuid())
+  memberId  String?     @map("member_id")
+  planId    String      @map("plan_id")
+  type      PaymentType
+  walkinTag String?     @map("walkin_tag")
+  amount    Decimal
+  paidAt    DateTime    @default(now()) @map("paid_at")
+
+  member Member? @relation(fields: [memberId], references: [id])
+  plan   Plan    @relation(fields: [planId], references: [id])
+  pass   Pass?
+  visit  Visit?
+
+  @@map("payments")
+}
+
+model Pass {
+  id        String   @id @default(uuid())
+  memberId  String   @map("member_id")
+  planId    String   @map("plan_id")
+  paymentId String   @unique @map("payment_id")
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  member  Member  @relation(fields: [memberId], references: [id])
+  plan    Plan    @relation(fields: [planId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id])
+  visits  Visit[]
+
+  @@map("passes")
+}
+
+// NOTE: The check constraint enforcing exactly one of (pass_id, payment_id) is set
+// is NOT expressible in Prisma schema — it must be added via raw SQL in the migration.
+// See prisma/migrations/TIMESTAMP_init/migration.sql for the ALTER TABLE statement.
+model Visit {
+  id          String   @id @default(uuid())
+  memberId    String   @map("member_id")
+  passId      String?  @map("pass_id")
+  paymentId   String?  @unique @map("payment_id")
+  checkedInAt DateTime @default(now()) @map("checked_in_at")
+
+  member  Member   @relation(fields: [memberId], references: [id])
+  pass    Pass?    @relation(fields: [passId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
+
+  @@map("visits")
+}
+
+model ContentBlock {
+  id          String      @id @default(uuid())
+  key         String      @unique
+  value       String
+  type        ContentType
+  updatedById String      @map("updated_by")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  updatedBy User @relation(fields: [updatedById], references: [id])
+
+  @@map("content_blocks")
+}
